@@ -1,0 +1,76 @@
+{% extends 'bootstrap/base.html' %}
+
+{%- block styles %}
+{{- super() }}
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+{%- endblock styles -%}
+
+{%- block head %}
+{{- super() }}
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/favicon.png') }}">
+{%- endblock head %}
+
+{%- block navbar %}
+<!-- begin navbar block -->
+  <nav class="navbar navbar-inverse" role="navigation">
+    <div class="container">
+      <div class="navbar-header">
+        <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </button>
+        <a class="navbar-brand" href="{{ url_for('grow') }}"><span class="glyphicon glyphicon-tree-conifer"></span> grow</a>
+      </div>
+      <div id="searchbar" class="collapse navbar-collapse">
+{% block navigation %}{% endblock navigation %}
+      </div> <!--/.nav-collapse -->
+    </div>
+  </nav>
+<!-- end navbar block -->
+{%- endblock navbar -%}
+
+{% block content %}
+<!-- begin content block -->
+  <div id="content-frame" class="container">
+<!-- begin flashed messages -->
+  {%- with messages = get_flashed_messages(with_categories=True), transform = {
+    'error': 'danger',
+    'warning': 'warning',
+    'info': 'info',
+    'success': 'success',
+  }, glyphicon = {
+    'error': 'exclamation',
+    'warning': 'exclamation',
+    'info': 'info',
+    'success': 'ok',
+  } -%}
+  {%- if messages %}
+    <div class="container flashed-messages">
+      {%- for cat, msg in messages %}
+      <div class="row">
+        <div class="col-md-offset-3 col-md-6">
+          <div class="alert alert-{{ transform.get(cat, 'info') }}" role="alert">
+            <span class="glyphicon glyphicon-{{ glyphicon.get(cat, 'info') }}-sign"></span> {{ msg|safe }}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  {%- endif -%}
+  {%- endwith %}
+<!-- end flashed messages -->
+  {% block page %}
+  {% endblock page %}
+  </div>
+<!-- end content block -->
+{% endblock content -%}
+
+{%- block scripts -%}
+{{- super() -}}
+  <script>
+  $(function () {
+    console.log('Ready.')
+  })
+  </script>
+{%- endblock scripts -%}

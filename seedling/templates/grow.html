@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+
+{%- block title %}Grow Tools{% endblock title %}
+{%- block styles %}
+{{- super() }}
+<style>
+</style>
+{%- endblock styles -%}
+
+<!--{%- block navigation %}-->
+<!-- begin navigation controls block -->
+        <ul class="nav navbar-nav navbar-right">
+          <li>
+            <form class="navbar-form" role="search" action="{{ url_for('grow') }}" method="get">
+              <div class="form-group">
+                <div class="input-group">
+                  <span class="input-group-btn">
+                    <button class="btn btn-secondary" type="submit">
+                      <span class="glyphicon glyphicon-share-alt"></span>
+                    </button>
+                  </span>
+                  <input class="form-control" type="text" name="msg" value="" placeholder="send message" autofocus autocomplete="off">
+                </div>
+              </div>
+            </form>
+          </li>
+          <li><a href="https://github.com/chasmack/hummaps" target="_blank">about</a></li>
+        </ul>
+<!-- end navigation controls -->
+{%- endblock navigation -%}
+
+{% block page %}
+<!-- begin page content block -->
+    <p>RELAYS: {{ relays }}</p>
+    <hr/>
+    {% for row in temps %}
+    <p>{{ row }}</p>
+    {% endfor %}
+<!-- end page content block -->
+{%- endblock page -%}
+
+{% block scripts %}
+<!-- begin scripts block -->
+    {{- super() }}
+    <script src="{{ url_for('static', filename='js/jquery.mousewheel.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/grow.js') }}"></script>
+<!-- end scripts block -->
+{% endblock scripts %}

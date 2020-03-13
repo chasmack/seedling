@@ -1,0 +1,16 @@
+04/30/17 13:10:50 ERROR - Unable to initialize BMP280.
+05/01/17 12:21:59 ERROR - Unable to initialize BMP280.
+05/08/17 21:17:21 ERROR - pidfile /home/pi/projects/grow/controller.pid exists. Daemon already running?
+05/09/17 02:59:53 ERROR - pidfile /home/pi/projects/grow/controller.pid exists. Daemon already running?
+05/09/17 03:06:40 ERROR - pidfile /home/pi/projects/grow/controller.pid exists. Daemon already running?
+05/09/17 03:08:24 ERROR - pidfile /home/pi/projects/grow/controller.pid exists. Daemon already running?
+05/09/17 03:12:51 ERROR - pidfile /home/pi/projects/grow/controller.pid exists. Daemon already running?
+05/09/17 03:19:59 ERROR - Unable to initialize BMP280.
+06/08/17 23:43:58 ERROR - Unable to initialize BMP280.
+06/09/17 00:16:45 ERROR - pidfile /home/pi/projects/grow/controller.pid exists. Daemon already running?
+03/10/20 13:29:59 ERROR - pidfile /home/pi/projects/grow/controller.pid exists. Daemon already running?
+03/10/20 13:36:47 ERROR - pidfile /home/pi/projects/grow/controller.pid exists. Daemon already running?
+03/10/20 13:47:04 ERROR - pidfile /home/pi/projects/grow/controller.pid exists. Daemon already running?
+03/10/20 13:58:41 ERROR - pidfile /home/pi/projects/grow/controller.pid exists. Daemon already running?
+03/12/20 14:52:02 ERROR - pidfile /home/pi/projects/grow/controller.pid exists. Daemon already running?
+03/12/20 14:54:08 ERROR - pidfile /home/pi/projects/grow/controller.pid exists. Daemon already running?

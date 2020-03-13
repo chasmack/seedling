@@ -1,0 +1,25 @@
+html {
+  height: 100%;
+}
+body {
+  background: #f6f6f6;
+  color: #333666;
+}
+section {
+  text-align: center;
+  margin: 50px 0;
+}
+
+.flashed-messages {
+  margin: 0 auto;
+}
+
+@-webkit-keyframes spin {
+  0% { -webkit-transform: rotate(0deg); }
+  100% { -webkit-transform: rotate(360deg); }
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
