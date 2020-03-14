@@ -100,7 +100,7 @@ class DS18B20(DS2482):
         return False if self.ow_single_bit() else True
 
     def conversion_time(self, config):
-		# DS18B20 conversion time in seconds
+        # DS18B20 conversion time in seconds
         return {
             DS18B20_CONFIG_9_BIT:   0.100,
             DS18B20_CONFIG_10_BIT:  0.200,
@@ -109,7 +109,7 @@ class DS18B20(DS2482):
         }[config & DS18B20_CONFIG_RESOLUTION_MASK]
 
     def scratchpad(self, rom, data=None):
-		# DS18B20 scratchpad memory
+        # DS18B20 scratchpad memory
         if data and len(data) == 3:
 
             # Write the alarm triggers and config register
@@ -132,7 +132,7 @@ class DS18B20(DS2482):
         return scratch
 
     def config(self, rom, config=None):
-		# DS18B20 config register
+        # DS18B20 config register
         if config is not None:
             config = self.scratchpad(rom)[2:4] + [config]
 

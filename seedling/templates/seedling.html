@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 
-{%- block title %}Grow Tools{% endblock title %}
+{%- block title %}Seedling Control{% endblock title %}
 {%- block styles %}
 {{- super() }}
 <style>
@@ -11,7 +11,7 @@
 <!-- begin navigation controls block -->
         <ul class="nav navbar-nav navbar-right">
           <li>
-            <form class="navbar-form" role="search" action="{{ url_for('grow') }}" method="get">
+            <form class="navbar-form" role="search" action="{{ url_for('seedling') }}" method="get">
               <div class="form-group">
                 <div class="input-group">
                   <span class="input-group-btn">
@@ -24,7 +24,7 @@
               </div>
             </form>
           </li>
-          <li><a href="https://github.com/chasmack/hummaps" target="_blank">about</a></li>
+          <li><a href="https://github.com/chasmack/seedling" target="_blank">about</a></li>
         </ul>
 <!-- end navigation controls -->
 {%- endblock navigation -%}
@@ -43,6 +43,6 @@
 <!-- begin scripts block -->
     {{- super() }}
     <script src="{{ url_for('static', filename='js/jquery.mousewheel.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/grow.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/seedling.js') }}"></script>
 <!-- end scripts block -->
 {% endblock scripts %}

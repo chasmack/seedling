@@ -5,7 +5,7 @@ import sqlite3
 import logging
 from datetime import datetime, timedelta
 
-from grow import DATABASE, MQUEUE_CMD
+from seedling import DATABASE, MQUEUE_CMD
 
 from controller.ds18b20 import DS18B20, OneWireDataError
 from controller.mcp23008 import MCP23008

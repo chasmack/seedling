@@ -2,22 +2,22 @@ import time
 import posix_ipc
 import sqlite3
 
-from flask import request, make_response, url_for
+from flask import request
 from flask import render_template, flash
 
-from grow import app, MQUEUE_CMD, DATABASE
+from seedling import app
 
-@app.route('/test')
+@app.route('/test', methods=['GET'])
 def test():
-    return url_for('test')
+    return 'test'
 
-@app.route('/')
-def grow():
+@app.route('/', methods=['GET'])
+def seedling():
 
     msg = request.args.get('msg', '').upper()
     if msg != '':
 
-        mq = posix_ipc.MessageQueue(MQUEUE_CMD)
+        mq = posix_ipc.MessageQueue(app.config['MQUEUE_CMD'])
         success = False
         try:
             # this fails after timeout if the queue is full
@@ -40,7 +40,7 @@ def grow():
         else:
             flash('NO CONTROLLER', 'error')
 
-    con = sqlite3.connect(DATABASE)
+    con = sqlite3.connect(app.config['DATABASE'])
     cur = con.cursor()
     cur.execute("""
     WITH
@@ -86,7 +86,7 @@ def grow():
 
     con.close()
 
-    return render_template('grow.html', relays=relays, temps=temps)
+    return render_template('seedling.html', relays=relays, temps=temps)
 
 
 #
