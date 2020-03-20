@@ -1,6 +1,6 @@
 import time
 
-import Adafruit_GPIO.I2C as I2C
+import adafruit_bus_device.i2c_device as i2c_device
 
 # Device i2c address
 MCP23008_ADDRESS = 0x22
@@ -36,63 +36,75 @@ PORT_A7 = 0x80
 
 class MCP23008(object):
 
-    def __init__(self, address=MCP23008_ADDRESS):
-
-        self.gpio = I2C.Device(address=address, busnum=1)
-        self.gpio.write8(MCP23008_IOCON, 0)
+    def __init__(self, i2c, address=MCP23008_ADDRESS):
+        self.gpio = i2c_device.I2CDevice(i2c, address)
+        self.gpio.write(bytes([MCP23008_IOCON, 0]))
 
     def input(self):
-        return self.gpio.readU8(MCP23008_GPIO)
+        buf  = bytearray([MCP23008_GPIO])
+        self.gpio.write_then_readinto(buf, buf)
+        return buf[0]
 
     def olat(self, mask, data=None):
-        olat = self.gpio.readU8(MCP23008_OLAT)
-        if data is not None:
-            olat = (olat & ~mask) | (data & mask)
-            self.gpio.write8(MCP23008_OLAT, olat)
-        return olat & mask
+        buf = bytearray([MCP23008_OLAT,  0x00])
+        self.gpio.write_then_readinto(buf, buf, out_end=1, in_start=1)
+        if not data is None:
+            buf[1] = ((buf[1] & ~mask) | (data & mask)) & 0xFF
+            self.gpio.write(buf)
+        return buf[1] & mask
 
     def output_high(self, mask):
-        olat = self.gpio.readU8(MCP23008_OLAT)
-        olat |= mask
-        self.gpio.write8(MCP23008_OLAT, olat)
+        buf = bytearray([MCP23008_OLAT,  0x00])
+        self.gpio.write_then_readinto(buf, buf, out_end=1, in_start=1)
+        buf[1] |= mask
+        self.gpio.write(buf)
         return self
 
     def output_low(self, mask):
-        olat = self.gpio.readU8(MCP23008_OLAT)
-        olat &= ~mask
-        self.gpio.write8(MCP23008_OLAT, olat)
+        buf = bytearray([MCP23008_OLAT, 0x00])
+        self.gpio.write_then_readinto(buf, buf, out_end=1, in_start=1)
+        buf[1] &= ~mask
+        self.gpio.write(buf)
         return self
 
     def config_invert(self, mask, state=True):
-        ipol = self.gpio.readU8(MCP23008_IPOL)
+        buf = bytearray([MCP23008_IPOL, 0x00])
+        self.gpio.write_then_readinto(buf, buf, out_end=1, in_start=1)
         if state:
-            ipol |= mask
+            buf[1] |= mask
         else:
-            ipol &= ~mask
-        self.gpio.write8(MCP23008_IPOL, ipol)
+            buf[1] &= ~mask
+        self.gpio.write(buf)
         return self
 
     def config_pullup(self, mask, state=True):
-        gppu = self.gpio.readU8(MCP23008_GPPU)
+        buf = bytearray([MCP23008_GPPU, 0x00])
+        self.gpio.write_then_readinto(buf, buf, out_end=1, in_start=1)
         if state:
-            gppu |= mask
+            buf[1] |= mask
         else:
-            gppu &= ~mask
-        self.gpio.write8(MCP23008_GPPU, gppu)
+            buf[1] &= ~mask
+        self.gpio.write(buf)
         return self
 
     def config_input(self, mask):
-        iodir = self.gpio.readU8(MCP23008_IODIR) | mask
-        self.gpio.write8(MCP23008_IODIR, iodir)
+        buf = bytearray([MCP23008_IODIR, 0x00])
+        self.gpio.write_then_readinto(buf, buf, out_end=1, in_start=1)
+        buf[1]|= mask
+        self.gpio.write(buf)
         return self
 
     def config_output(self, mask):
-        iodir = self.gpio.readU8(MCP23008_IODIR) & ~mask
-        self.gpio.write8(MCP23008_IODIR, iodir)
+        buf = bytearray([MCP23008_IODIR, 0x00])
+        self.gpio.write_then_readinto(buf, buf, out_end=1, in_start=1)
+        buf[1] &= (~mask & 0xFF)
+        self.gpio.write(buf)
         return self
 
 
-def test():
+if __name__ == '__main__':
+    import board
+    import busio
 
     RELAY_A = PORT_A0
     RELAY_B = PORT_A1
@@ -107,12 +119,11 @@ def test():
     KILL_SENSE = PORT_A7
     KILL_BIAS = PORT_A6
 
-    mcp = MCP23008(MCP23008_ADDRESS)
-
+    i2c = busio.I2C(board.SCL, board.SDA)
+    mcp = MCP23008(i2c, address=MCP23008_ADDRESS)
 
     # led off (low)
     mcp.config_output(LED).output_low(LED)
-    exit(0)
 
     # configure A7 as the kill swithch
     mcp.config_input(KILL_SENSE).config_invert(KILL_SENSE).config_pullup(KILL_SENSE)
@@ -145,5 +156,5 @@ def test():
             done = 1
 
     # reset the device
-    mcp.output_high(RELAYS)    # relays off (high)
-    mcp.config_input(0xFF)     # all inputs
+    mcp.output_high(RELAYS)  # relays off (high)
+    mcp.config_input(0xFF)  # all inputs

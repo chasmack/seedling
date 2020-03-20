@@ -7,13 +7,13 @@ from datetime import datetime, timedelta
 
 from seedling import DATABASE, MQUEUE_CMD
 
-from controller.ds18b20 import DS18B20, OneWireDataError
-from controller.mcp23008 import MCP23008
-from controller.mcp23008 import PORT_A0, PORT_A1, PORT_A2, PORT_A3
-from controller.bmp280 import BMP280, BMP280_MODE_FORCED, BMP280_FILTER_COEFF_4
-from controller.bmp280 import BMP280_OS_MODE_HIGH_RESOLUTION
+from control.ds18b20 import DS18B20, OneWireDataError
+from control.mcp23008 import MCP23008
+from control.mcp23008 import PORT_A0, PORT_A1, PORT_A2, PORT_A3
+from control.bmp280 import BMP280, BMP280_MODE_FORCED, BMP280_FILTER_COEFF_4
+from control.bmp280 import BMP280_OS_MODE_HIGH_RESOLUTION
 
-from controller.daemon import daemon
+from control.daemon import daemon
 
 HOSTNAME = platform.uname().node
 
@@ -60,7 +60,7 @@ MAINT_PERIOD = 8 * 3600
 AVERAGE_SAMPLES = 3
 
 
-class Controller(daemon):
+class Control(daemon):
 
     def __init__(self):
 
@@ -74,7 +74,7 @@ class Controller(daemon):
             datefmt=LOG_DATE_FORMAT
         )
 
-        super(Controller, self).__init__(PID_FILE)
+        super(Control, self).__init__(PID_FILE)
 
     def stop(self):
 
@@ -486,7 +486,7 @@ class Controller(daemon):
 
         # Connect the message handler
         logging.info('Connecting to mesage queue handler')
-        Controller.check_messages(self)
+        Control.check_messages(self)
 
         logging.info('Waiting for updaters to terminate')
         relay_updater.join()
@@ -503,7 +503,7 @@ class Controller(daemon):
 
         # Lock the handler and reconnect to the message queue
         self.mqueue_lock.acquire()
-        self.mqueue.request_notification((Controller.check_messages, self))
+        self.mqueue.request_notification((Control.check_messages, self))
 
         # Clear the message queue
         while self.mqueue.current_messages > 0:
@@ -534,10 +534,10 @@ class Controller(daemon):
 
     def test1(self, datafile=None):
 
-        from controller.bmp280 import BMP280, BMP280_STATUS_BUSY, BMP280_FILTER_COEFF_OFF
-        from controller.bmp280 import BMP280_TEMP_NONE, BMP280_TEMP_OS_1X
-        from controller.bmp280 import BMP280_PRES_OS_1X, BMP280_PRES_OS_2X, BMP280_PRES_OS_4X
-        from controller.bmp280 import BMP280_MODE_FORCED
+        from control.bmp280 import BMP280, BMP280_STATUS_BUSY, BMP280_FILTER_COEFF_OFF
+        from control.bmp280 import BMP280_TEMP_NONE, BMP280_TEMP_OS_1X
+        from control.bmp280 import BMP280_PRES_OS_1X, BMP280_PRES_OS_2X, BMP280_PRES_OS_4X
+        from control.bmp280 import BMP280_MODE_FORCED
 
         READ_TEMP = BMP280_PRES_OS_2X | BMP280_TEMP_OS_1X
         PRES_ONLY = BMP280_PRES_OS_2X | BMP280_TEMP_NONE
@@ -630,10 +630,10 @@ class Controller(daemon):
 
     def test2(self, datafile=None):
 
-        from controller.bmp280 import BMP280, BMP280_STATUS_BUSY, BMP280_FILTER_COEFF_OFF
-        from controller.bmp280 import BMP280_TEMP_NONE, BMP280_TEMP_OS_1X
-        from controller.bmp280 import BMP280_PRES_OS_1X, BMP280_PRES_OS_2X, BMP280_PRES_OS_4X
-        from controller.bmp280 import BMP280_MODE_FORCED
+        from control.bmp280 import BMP280, BMP280_STATUS_BUSY, BMP280_FILTER_COEFF_OFF
+        from control.bmp280 import BMP280_TEMP_NONE, BMP280_TEMP_OS_1X
+        from control.bmp280 import BMP280_PRES_OS_1X, BMP280_PRES_OS_2X, BMP280_PRES_OS_4X
+        from control.bmp280 import BMP280_MODE_FORCED
 
         READ_TEMP = BMP280_PRES_OS_1X | BMP280_TEMP_OS_1X
         PRES_ONLY = BMP280_PRES_OS_1X | BMP280_TEMP_NONE

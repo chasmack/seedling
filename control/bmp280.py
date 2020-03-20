@@ -7,7 +7,7 @@ LOGFILE = None
 LOGLEVEL = logging.INFO
 
 # BMP280 default address.
-BMP280_I2C_ADDR           = 0x76
+BMP280_I2C_ADDR         = 0x77
 
 # Control register
 BMP280_MODE_SLEEP       = 0x00          # Power modes mode[1:0]
