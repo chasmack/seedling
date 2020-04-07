@@ -45,6 +45,9 @@ class DS2482:
         if active_pullup:
             self.device_config = CONFIG_ACTIVE_PULLUP
 
+        # 1-Wire bus busy with STRONG_PULLUP
+        self._bus_busy = time.monotonic()
+
     def device_reset(self):
         """Terminate any 1-wire communication and reset the DS2482"""
         with self._i2c as i2c:
@@ -80,7 +83,7 @@ class DS2482:
                 time.sleep(0.001)
             return buf[0]
 
-    def single_bit(self, bit=1, strong_pullup=False):
+    def single_bit(self, bit=1, strong_pullup=False, busy=None):
         with self._i2c as i2c:
             buf = bytearray(2)
             if strong_pullup:
@@ -97,9 +100,11 @@ class DS2482:
                 if not buf[0] & STATUS_1W_BUSY:
                     break
                 time.sleep(0.001)
+            if busy:
+                self._bus_busy = time.monotonic() + busy
             return buf[0] & STATUS_SINGLE_BIT != 0
 
-    def write_byte(self, data, strong_pullup=False):
+    def write_byte(self, data, strong_pullup=False, busy=None):
         with self._i2c as i2c:
             buf = bytearray(2)
             if strong_pullup:
@@ -116,6 +121,8 @@ class DS2482:
                 if buf[0] & STATUS_1W_BUSY == 0:
                     break
                 time.sleep(0.001)
+            if busy:
+                self._bus_busy = time.monotonic() + busy
 
     def read_byte(self):
         with self._i2c as i2c:
@@ -131,6 +138,12 @@ class DS2482:
             return buf[0]
 
     def wait_ready(self):
+        while True:
+            t = self._bus_busy - time.monotonic()
+            if t > 0:
+                time.sleep(t)
+            else:
+                break
         with self._i2c as i2c:
             buf = bytearray([COMMAND_SET_POINTER, POINTER_STATUS])
             i2c.write(buf)

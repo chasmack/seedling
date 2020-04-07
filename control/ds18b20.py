@@ -38,6 +38,13 @@ CONVERT_TIME = {
     CONVERT_RES_12_BIT:     0.750
 }
 
+CONVERT_MASK = {
+    CONVERT_RES_9_BIT:      0x07,
+    CONVERT_RES_10_BIT:     0x03,
+    CONVERT_RES_11_BIT:     0x01,
+    CONVERT_RES_12_BIT:     0x00
+}
+
 # DS18B20 sensor ROM codes
 DS18B20_SENSORS = {
     'A1': [0x28, 0x09, 0x89, 0xAB, 0x08, 0x00, 0x00, 0xA8],
@@ -77,24 +84,7 @@ class OneWireDataError(Exception):
     pass
 
 
-def to_fahrenheit(t):
-    return t * 1.8 + 32.0
-
-
 class DS18B20:
-
-    # When using parasitic power any Convert T and Copy Scratchpad command will
-    # update Bus Busy to indicate when the 1-wire bus will be available.
-    _parasitic_power = None
-    _bus_busy = time.monotonic()
-
-    @staticmethod
-    def wait_ready():
-        while DS18B20._parasitic_power:
-            t = DS18B20._bus_busy - time.monotonic()
-            if t <= 0:
-                break
-            time.sleep(t)
 
     @staticmethod
     def calc_crc(byte_data):
@@ -103,32 +93,21 @@ class DS18B20:
             crc = CRC_LOOKUP[crc ^ b]
         return crc
 
-    def __init__(self, ow, rom=None, convert_res=CONVERT_RES_10_BIT):
-        self.ow = ow
-        self.rom_code = rom
-
-        # First sensor to be initialized checks all devices for parasitic power.
-        if DS18B20._parasitic_power is None:
-            DS18B20._parasitic_power = self.parasitic_power()
-
+    def __init__(self, onewire, rom=None, convert_res=CONVERT_RES_11_BIT):
+        self._ow = onewire
+        self._rom = rom
+        self._parasitic = self.parasitic_power
         self.set_resolution(convert_res)
 
-    def parasitic_power(self):
-        DS18B20.wait_ready()
-        self.ow.reset()
-        self.ow.write_byte(COMMAND_ROM_SKIP)
-        self.ow.write_byte(COMMAND_READ_POWER)
-        return not self.ow.single_bit()
-
     def select(self):
-        DS18B20.wait_ready()
-        self.ow.reset()
-        if self.rom_code:
-            self.ow.write_byte(COMMAND_ROM_MATCH)
-            for b in self.rom_code:
-                self.ow.write_byte(b)
+        self._ow.wait_ready()
+        self._ow.reset()
+        if self._rom:
+            self._ow.write_byte(COMMAND_ROM_MATCH)
+            for b in self._rom:
+                self._ow.write_byte(b)
         else:
-            self.ow.write_byte(COMMAND_ROM_SKIP)
+            self._ow.write_byte(COMMAND_ROM_SKIP)
 
     def set_resolution(self, convert_res):
         scratch = self.scratchpad[2:5]
@@ -137,16 +116,24 @@ class DS18B20:
         self.convert_res = convert_res
 
     @property
+    def parasitic_power(self):
+        self._ow.reset()
+        self._ow.write_byte(COMMAND_ROM_SKIP)
+        self._ow.write_byte(COMMAND_READ_POWER)
+        return not self._ow.single_bit()
+
+    @property
     def temperature(self):
-        return int.from_bytes(self.scratchpad[0:2], byteorder='little', signed=True) / 16.0
+        t = int.from_bytes(self.scratchpad[0:2], byteorder='little', signed=True)
+        return (t & ~CONVERT_MASK[self.convert_res]) / 16.0
 
     @property
     def scratchpad(self):
         self.select()
-        self.ow.write_byte(COMMAND_READ_SCRATCH)
+        self._ow.write_byte(COMMAND_READ_SCRATCH)
         buf = bytearray(9)
         for i in range(9):
-            buf[i] = self.ow.read_byte()
+            buf[i] = self._ow.read_byte()
         if DS18B20.calc_crc(buf):
             raise OneWireDataError('Bad CRC: %s' % ' '.join(hex(i) for i in buf))
         return buf
@@ -154,43 +141,43 @@ class DS18B20:
     @scratchpad.setter
     def scratchpad(self, data):
         self.select()
-        self.ow.write_byte(COMMAND_WRITE_SCRATCH)
+        self._ow.write_byte(COMMAND_WRITE_SCRATCH)
         for i in range(3):
-            self.ow.write_byte(data[i])
+            self._ow.write_byte(data[i])
 
     def copy_scratchpad(self):
         self.select()
-        if DS18B20._parasitic_power:
-            self.ow.write_byte(COMMAND_COPY_SCRATCH, strong_pullup=True)
-            DS18B20._bus_busy = time.monotonic() + 0.010
+        if self._parasitic:
+            self._ow.write_byte(COMMAND_COPY_SCRATCH, strong_pullup=True, busy=0.010)
         else:
-            self.ow.write_byte(COMMAND_COPY_SCRATCH)
+            self._ow.write_byte(COMMAND_COPY_SCRATCH)
 
     def recall_scratchpad(self):
         self.select()
-        self.ow.write_byte(COMMAND_RECALL_EEPROM)
-        while self.ow.single_bit() == 0:
+        self._ow.write_byte(COMMAND_RECALL_EEPROM)
+        while self._ow.single_bit() == 0:
             continue
 
     def convert_t(self):
         self.select()
-        if DS18B20._parasitic_power:
-            self.ow.write_byte(COMMAND_CONVERT_T, strong_pullup=True)
-            DS18B20._bus_busy = time.monotonic() + CONVERT_TIME[self.convert_res]
+        if self._parasitic:
+            self._ow.write_byte(COMMAND_CONVERT_T, strong_pullup=True, busy=CONVERT_TIME[self.convert_res])
         else:
-            self.ow.write_byte(COMMAND_CONVERT_T)
+            self._ow.write_byte(COMMAND_CONVERT_T)
 
     def read_rom(self):
         """Read the 8-byte rom code from a SINGLE DEVICE"""
-        rom = bytearray(8)
+        buf = bytearray(8)
         self.select()
-        self.ow.write_byte(COMMAND_ROM_READ)
+        self._ow.write_byte(COMMAND_ROM_READ)
         for i in range(8):
-            rom[i] = self.ow.read_byte()
-        if DS18B20.calc_crc(rom):
+            buf[i] = self._ow.read_byte()
+        if DS18B20.calc_crc(buf):
             raise OneWireDataError
-        return rom
+        return buf
 
+def to_fahrenheit(t):
+    return t * 1.8 + 32.0
 
 if __name__ == '__main__':
 
@@ -199,14 +186,14 @@ if __name__ == '__main__':
     from control.ds2482 import DS2482
 
     i2c = busio.I2C(board.SCL, board.SDA)
-    ow = DS2482(i2c, active_pullup=True)
+    onewire = DS2482(i2c, active_pullup=True)
 
-    sensor = {}
+    tmp = {}
     sensor_ids = ('C1', 'C2', 'C3', 'C4', 'C5')
     for id in sensor_ids:
-        sensor[id] = DS18B20(ow, rom=DS18B20_SENSORS[id], convert_res=CONVERT_RES_11_BIT)
+        tmp[id] = DS18B20(onewire, rom=DS18B20_SENSORS[id], convert_res=CONVERT_RES_11_BIT)
 
     for id in sensor_ids:
-        sensor[id].convert_t()
-        print('%s temp: %.2f C  (%0.1f F)' % (id, sensor[id].temperature, to_fahrenheit(sensor[id].temperature)))
+        tmp[id].convert_t()
+        print('%s temp: %.2f C  (%0.1f F)' % (id, tmp[id].temperature, to_fahrenheit(tmp[id].temperature)))
         # print('%s temp: %.1f F' % (id, to_fahrenheit(sensor[id].temperature)))

@@ -31,9 +31,7 @@
 
 {% block page %}
 <!-- begin page content block -->
-    <p>RELAYS: {{ relays }}</p>
-    <hr/>
-    {% for row in temps %}
+    {% for row in status %}
     <p>{{ row }}</p>
     {% endfor %}
 <!-- end page content block -->

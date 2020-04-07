@@ -1,0 +1,15 @@
+[Unit]
+Description=Seedling Control service
+After=network.target
+
+[Service]
+WorkingDirectory=/home/pi/projects/seedling
+PIDFile=/home/pi/projects/seedling/seedling.pid
+ExecStart=/home/pi/projects/seedling/seedling start
+StandardOutput=inherit
+StandardError=inherit
+Restart=always
+User=pi
+
+[Install]
+WantedBy=multi-user.target

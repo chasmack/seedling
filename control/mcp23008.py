@@ -45,7 +45,7 @@ class MCP23008(object):
         self.gpio.write_then_readinto(buf, buf)
         return buf[0]
 
-    def olat(self, mask, data=None):
+    def olat(self, mask=0xFF, data=None):
         buf = bytearray([MCP23008_OLAT,  0x00])
         self.gpio.write_then_readinto(buf, buf, out_end=1, in_start=1)
         if not data is None:
@@ -53,21 +53,21 @@ class MCP23008(object):
             self.gpio.write(buf)
         return buf[1] & mask
 
-    def output_high(self, mask):
+    def output_high(self, mask=0xFF):
         buf = bytearray([MCP23008_OLAT,  0x00])
         self.gpio.write_then_readinto(buf, buf, out_end=1, in_start=1)
         buf[1] |= mask
         self.gpio.write(buf)
         return self
 
-    def output_low(self, mask):
+    def output_low(self, mask=0xFF):
         buf = bytearray([MCP23008_OLAT, 0x00])
         self.gpio.write_then_readinto(buf, buf, out_end=1, in_start=1)
         buf[1] &= ~mask
         self.gpio.write(buf)
         return self
 
-    def config_invert(self, mask, state=True):
+    def config_invert(self, mask=0xFF, state=True):
         buf = bytearray([MCP23008_IPOL, 0x00])
         self.gpio.write_then_readinto(buf, buf, out_end=1, in_start=1)
         if state:
@@ -77,7 +77,7 @@ class MCP23008(object):
         self.gpio.write(buf)
         return self
 
-    def config_pullup(self, mask, state=True):
+    def config_pullup(self, mask=0xFF, state=True):
         buf = bytearray([MCP23008_GPPU, 0x00])
         self.gpio.write_then_readinto(buf, buf, out_end=1, in_start=1)
         if state:
@@ -87,14 +87,14 @@ class MCP23008(object):
         self.gpio.write(buf)
         return self
 
-    def config_input(self, mask):
+    def config_input(self, mask=0xFF):
         buf = bytearray([MCP23008_IODIR, 0x00])
         self.gpio.write_then_readinto(buf, buf, out_end=1, in_start=1)
         buf[1]|= mask
         self.gpio.write(buf)
         return self
 
-    def config_output(self, mask):
+    def config_output(self, mask=0xFF):
         buf = bytearray([MCP23008_IODIR, 0x00])
         self.gpio.write_then_readinto(buf, buf, out_end=1, in_start=1)
         buf[1] &= (~mask & 0xFF)
@@ -105,6 +105,9 @@ class MCP23008(object):
 if __name__ == '__main__':
     import board
     import busio
+
+    i2c = busio.I2C(board.SCL, board.SDA)
+    mcp = MCP23008(i2c, address=MCP23008_ADDRESS)
 
     RELAY_A = PORT_A0
     RELAY_B = PORT_A1
@@ -118,9 +121,6 @@ if __name__ == '__main__':
     # short kill sense to kill bias to end loop
     KILL_SENSE = PORT_A7
     KILL_BIAS = PORT_A6
-
-    i2c = busio.I2C(board.SCL, board.SDA)
-    mcp = MCP23008(i2c, address=MCP23008_ADDRESS)
 
     # led off (low)
     mcp.config_output(LED).output_low(LED)

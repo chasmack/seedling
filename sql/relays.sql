@@ -1,3 +1,4 @@
+
 .mode columns
 .headers on
 WITH

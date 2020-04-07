@@ -1,0 +1,19 @@
+#!/bin/bash
+
+case "$1" in
+  start)
+        cd /home/pi/projects/seedling && ./venv/bin/python seedling.py
+        ;;
+  stop)
+        cd /home/pi/projects/seedling && kill -SIGTERM `cat seedling.pid`
+        ;;
+  restart)
+        stop
+        start
+        ;;
+  *)
+        echo $"Usage: $0 {start|stop|restart}"
+        exit 1
+esac
+
+exit 0
