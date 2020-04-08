@@ -4,11 +4,17 @@ import os, signal
 from web import app
 from waitress import serve
 
-from multiprocessing import Process, Queue, Event
-from control.control import Control
+from multiprocessing import Process, Queue
+from control.control import Control, shutdown
 
 PID_FILE = os.path.join(os.path.dirname(__file__), 'seedling.pid')
 
+def clear_queue(q):
+    while True:
+        try:
+            q.get_nowait()
+        except queue.Empty:
+            break
 
 if __name__ == '__main__':
 
@@ -17,75 +23,62 @@ if __name__ == '__main__':
     with open(PID_FILE, 'w') as f:
         f.write(str(pid))
 
-    message_queue = Queue()
-    response_queue = Queue()
-    app.config['message_queue'] = message_queue
-    app.config['response_queue'] = response_queue
-    control = Control(message_queue, response_queue)
+    mqueue = Queue()
+    rqueue = Queue()
+    app.config['mqueue'] = mqueue
+    app.config['rqueue'] = rqueue
+    control = Control(mqueue, rqueue)
 
     control_proc = Process(target=control.main_loop, daemon=False)
     control_proc.start()
-    print('control process started, daemon: %s' % control_proc.daemon)
+    print('main control process started, daemon: %s' % control_proc.daemon)
 
     # serve(app, listen='0.0.0.0:8080')
     web_proc = Process(target=serve, args=(app,), kwargs={'listen': '0.0.0.0:8080'}, daemon=False)
     web_proc.start()
-    print('web process started, daemon: %s' % web_proc.daemon)
+    print('main web process started, daemon: %s' % web_proc.daemon)
 
-    exit_event = Event()
     def term_handler(sig, context):
-        exit_event.set()
-        print('handler: %s' % sig)
-
+        global exit_flag
+        exit_flag = True
+        print('main handler for %s' % sig)
     signal.signal(signal.SIGTERM, term_handler)
 
-    while not exit_event.is_set():
-        exit_event.wait(5)
-        if control_proc.is_alive():
-            print('control is alive')
+    exit_flag = False
+    while not exit_flag:
+
+        siginfo = signal.sigtimedwait([signal.SIGTERM], 5)
+        if siginfo is None and control_proc.is_alive() and web_proc.is_alive():
+            pass
         else:
-            exit_event.set()
-            print('control terminated')
-        if web_proc.is_alive():
-            print('web is alive')
-        else:
-            exit_event.set()
-            print('web terminated')
+            exit_flag = True
 
     if web_proc.is_alive():
-        print('terminate web')
+        print('main terminate web')
         os.kill(web_proc.pid, signal.SIGTERM)
 
     if control_proc.is_alive():
-        print('terminate control')
-        message_queue.put('end')
+        print('main terminate control')
+        clear_queue(mqueue)
+        mqueue.put('end')
 
-    time.sleep(2)
+    # Give control loop time to update instrumentation
+    time.sleep(2.5)
 
-    print('clear response queue')
-    while True:
-        try:
-            response_queue.get_nowait()
-        except queue.Empty:
-            break
+    print('main clear message queue')
+    clear_queue(mqueue)
 
-    print('clear message queue')
-    while True:
-        try:
-            message_queue.get_nowait()
-        except queue.Empty:
-            break
+    print('main clear response queue')
+    clear_queue(rqueue)
 
-    print('join web')
+    print('main join web')
     web_proc.join()
 
-    print('join control')
+    print('main join control')
     control_proc.join()
 
-    # try:
-    #     os.remove(PID_FILE)
-    # except FileNotFoundError:
-    #     pass
+    print('main shutdown input/output')
+    shutdown()
 
-    print('done')
+    print('main done')
     exit(0)

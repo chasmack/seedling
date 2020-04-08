@@ -1,6 +1,4 @@
-import time
 import queue
-import sqlite3
 
 from flask import request
 from flask import render_template, flash
@@ -15,18 +13,18 @@ def test():
 def seedling():
 
     msg = request.args.get('msg', '')
-    message_queue = app.config['message_queue']
+    mqueue = app.config['mqueue']
     if msg != '':
-        message_queue.put(msg)
+        mqueue.put(msg)
     else:
-        message_queue.put('stat')
+        mqueue.put('stat')
 
-    response_queue = app.config['response_queue']
+    rqueue = app.config['rqueue']
     try:
-        status = response_queue.get(timeout=5.0)
+        status = rqueue.get(timeout=5.0)
     except queue.Empty:
-        status = ()
         flash('ERROR: No response from controller.', 'error')
+        status = ()
 
     return render_template('seedling.html', status=status)
 

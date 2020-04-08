@@ -6,6 +6,7 @@ import board
 import busio
 from control.ds2482 import DS2482
 from control.ds18b20 import DS18B20, DS18B20_SENSORS
+from control.ds18b20 import CONVERT_RES_9_BIT, CONVERT_RES_10_BIT, CONVERT_RES_11_BIT, CONVERT_RES_12_BIT
 from control.ds18b20 import to_fahrenheit
 from control.mcp23008 import MCP23008
 from control.mcp23008 import PORT_A0, PORT_A1, PORT_A2, PORT_A3
@@ -13,6 +14,7 @@ from control.mcp23008 import PORT_A0, PORT_A1, PORT_A2, PORT_A3
 NCHANNELS = 4
 CYCLE_TIME = 10
 HYSTERESIS = 1.0
+CONVERT_RES = CONVERT_RES_9_BIT
 
 TEMP_IDS = (('C1', 'C3'), ('C2', 'C4'), ('C5',), ())
 
@@ -20,7 +22,11 @@ RELAY_PORTS = (PORT_A0, PORT_A1, PORT_A2, PORT_A3)
 RELAY_MASK = PORT_A0 | PORT_A1 | PORT_A2 | PORT_A3
 
 STARTUP_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), 'startup.config'))
-# STATUS_DATABASE = os.path.abspath(os.path.join(os.path.dirname(__file__), '../data/status.sqlite'))
+
+# Standalone procedure to shutdown the IO
+def shutdown():
+    i2c = busio.I2C(board.SCL, board.SDA)
+    MCP23008(i2c).output_high(RELAY_MASK).config_input(RELAY_MASK)
 
 class ControlChannel:
     def __init__(self, relay_port=None, temp_ids=None):
@@ -36,7 +42,7 @@ class ControlChannel:
 
 class Control:
 
-    def __init__(self, message_queue, response_queue):
+    def __init__(self, mqueue, rqueue):
 
         self.i2c = busio.I2C(board.SCL, board.SDA)
 
@@ -62,21 +68,20 @@ class Control:
         for i in range(NCHANNELS):
             c = ControlChannel(RELAY_PORTS[i], TEMP_IDS[i])
             for id in c.temp_ids:
-                c.temp_sensors.append(DS18B20(self.onewire, DS18B20_SENSORS[id]))
+                c.temp_sensors.append(DS18B20(self.onewire, DS18B20_SENSORS[id], convert_res=CONVERT_RES))
             if len(setpoints) > i:
                 c.setpoint = setpoints[i]
             self.channels.append(c)
 
-        self.message_queue = message_queue
-        self.response_queue = response_queue
-        self.run = True
-
-    def term(self, signum, frame):
-        self.run = False
+        self.mequeue = mqueue
+        self.rqueue = rqueue
 
     def main_loop(self):
 
-        while self.run:
+        exit_flag = False
+        while not exit_flag:
+
+            # print('control loop')
 
             relays = ~self.gpio.olat()
             for chan in self.channels:
@@ -91,7 +96,9 @@ class Control:
                         relays |= chan.relay_port
                     elif t > chan.setpoint + HYSTERESIS:
                         relays &= ~chan.relay_port
-                    chan.relay = relays & chan.relay_port != 0
+                else:
+                    relays &= ~chan.relay_port
+                chan.relay = relays & chan.relay_port != 0
 
             relays &= RELAY_MASK
             self.gpio.olat(RELAY_MASK, ~relays)
@@ -100,19 +107,16 @@ class Control:
             t = time.monotonic()
             t = CYCLE_TIME - t % CYCLE_TIME
 
-            print('wait %.3f' % t)
+            # print('control wait %.3f' % t)
             try:
-                msg = self.message_queue.get(timeout=t).lower()
-
+                msg = self.mequeue.get(timeout=t).lower()
             except queue.Empty:
                 pass
-
             else:
-                print('msg: %s' % msg)
+                print('control msg: %s' % msg)
 
                 if msg == 'end':
-                    self.run = False
-
+                    exit_flag = True
                 else:
                     err = None
                     msg = msg.split()
@@ -122,7 +126,7 @@ class Control:
                             if not 0 < n < NCHANNELS + 1:
                                 raise ValueError('Channel number must be from 1 to %d' % NCHANNELS)
                             sp = float(msg[2])
-                            self.channels[n].setpoint = sp
+                            self.channels[n - 1].setpoint = sp
                         except ValueError as e:
                             err = 'Bad command: %s' % e
                     elif len(msg) == 1 and msg[0] == 'stat':
@@ -131,12 +135,10 @@ class Control:
                         err = 'Bad command: %s' % ' '.join(msg)
 
                     if err:
-                        self.response_queue.put('ERROR: %s' % err)
+                        self.rqueue.put('ERROR: %s' % err)
                     else:
-                        self.response_queue.put(list(chan.status() for chan in self.channels))
+                        self.rqueue.put(list(chan.status() for chan in self.channels))
 
-            print('loop')
-
-
-        print('shutdown')
+        print('control shutdown')
         self.gpio.output_high(RELAY_MASK).config_input(RELAY_MASK)
+
