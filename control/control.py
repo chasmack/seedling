@@ -1,6 +1,8 @@
 import os
 import queue
 import time
+import re
+import itertools
 
 import board
 import busio
@@ -11,14 +13,18 @@ from control.ds18b20 import to_fahrenheit
 from control.mcp23008 import MCP23008
 from control.mcp23008 import PORT_A0, PORT_A1, PORT_A2, PORT_A3
 
-NCHANNELS = 4
-CYCLE_TIME = 10
+CYCLE_TIME = 5
 HYSTERESIS = 1.0
-CONVERT_RES = CONVERT_RES_9_BIT
+CONVERT_RES = CONVERT_RES_10_BIT
 
-TEMP_IDS = (('C1', 'C3'), ('C2', 'C4'), ('C5',), ())
+CHAN_PARAMS = (
+    ('A', 'C1', PORT_A0),
+    ('B', 'C2', PORT_A1),
+    ('C', 'C3', PORT_A2),
+    ('D', 'C4', PORT_A3),
+    ('C5', 'C5', None),
+)
 
-RELAY_PORTS = (PORT_A0, PORT_A1, PORT_A2, PORT_A3)
 RELAY_MASK = PORT_A0 | PORT_A1 | PORT_A2 | PORT_A3
 
 STARTUP_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), 'startup.config'))
@@ -29,20 +35,29 @@ def shutdown():
     MCP23008(i2c).output_high(RELAY_MASK).config_input(RELAY_MASK)
 
 class ControlChannel:
-    def __init__(self, relay_port=None, temp_ids=None):
-        self.relay_port = relay_port
+    def __init__(self, name, temp_id, port, onewire, convert_res):
+        self.name = name
+        self.temp_id = temp_id
+        self.port = port
+        self.enabled = None
         self.relay = None
         self.setpoint = None
-        self.temp_ids = temp_ids
-        self.temp_sensors = []
-        self.temps = []
+        self.temp_sensor =  DS18B20(onewire, DS18B20_SENSORS[temp_id], convert_res=convert_res)
+        self.temp = None
 
     def status(self):
-        return [self.relay, self.setpoint, *self.temps]
+        return {
+            'name': self.name,
+            'enabled': self.enabled,
+            'relay': self.relay,
+            'set': self.setpoint,
+            'temp': self.temp
+        }
+
 
 class Control:
 
-    def __init__(self, mqueue, rqueue):
+    def __init__(self, msg_queue, rsp_queue):
 
         self.i2c = busio.I2C(board.SCL, board.SDA)
 
@@ -53,92 +68,127 @@ class Control:
         # Initialize the 1-wire bus and temperature sensors
         self.onewire = DS2482(self.i2c, active_pullup=True)
 
-        # Get startup setpoints
-        setpoints = []
+        # Initialize the control channels
+
+        self.channel = {}
+        for name, temp_id, port in CHAN_PARAMS :
+            self.channel[name] = ControlChannel(name, temp_id, port, self.onewire, CONVERT_RES)
+
+        # Initialize setpoint and enabled from startup file
         with open(STARTUP_FILE) as f:
+            regex = re.compile('(%s):(\d+):(ON|OFF)' % '|'.join(self.channel_names))
             for line in f:
-                if line.startswith('#') or line.strip() == '':
+                line = line.strip()
+                if line.startswith('#') or line == '':
                     continue
-                setpoints = line.strip().split(',')
-                break
-        setpoints = list(float(sp) for sp in setpoints)
+                try:
+                    name, sp, en = regex.fullmatch(line).groups()
+                    chan = self.channel[name]
+                    if chan.port is not None:
+                        chan.setpoint = float(sp)
+                        chan.enabled = (en == 'ON')
+                    else:
+                        print('seedling control: Channel "%s" has not control port' % name)
+                except AttributeError:
+                    print('seedling control: Bad startup command: %s' % line)
 
-        # Initialize the channel objects
-        self.channels = []
-        for i in range(NCHANNELS):
-            c = ControlChannel(RELAY_PORTS[i], TEMP_IDS[i])
-            for id in c.temp_ids:
-                c.temp_sensors.append(DS18B20(self.onewire, DS18B20_SENSORS[id], convert_res=CONVERT_RES))
-            if len(setpoints) > i:
-                c.setpoint = setpoints[i]
-            self.channels.append(c)
+        self.msg_queue = msg_queue
+        self.rsp_queue = rsp_queue
 
-        self.mequeue = mqueue
-        self.rqueue = rqueue
+
+    @property
+    def channels(self):
+        ctl_chans = []
+        aux_chans = []
+        for chan in sorted(self.channel.values(), key=lambda c: c.name):
+            if chan.port is None:
+                aux_chans.append(chan)
+            else:
+                ctl_chans.append(chan)
+        return ctl_chans + aux_chans
+
+    @property
+    def channel_names(self):
+        return list(c.name for c in self.channels)
 
     def main_loop(self):
+
+        # Time at next instrumentation update
+        t = time.monotonic()
+        t_next = t - t % CYCLE_TIME
 
         exit_flag = False
         while not exit_flag:
 
-            # print('control loop')
+            # print('seedling control: loop')
+
+            t = time.monotonic()
+            t_wait = t_next - time.monotonic()
+
+            if t_wait > 0:
+                # print('seedling control: wait %.3f' % t_wait)
+
+                try:
+                    msg = self.msg_queue.get(timeout=t_wait)
+                except queue.Empty:
+                    # No message, update instrumentation
+                    pass
+                else:
+                    # print('seedling control: msg=%s' % msg)
+
+                    err = None
+                    cmd, *params = msg.upper().split()
+                    if cmd == 'STAT':
+                        stat = {
+                            'chans': list(c.status() for c in self.channels)
+                        }
+                        self.rsp_queue.put(stat)
+                        continue
+                    elif cmd == 'END':
+                        exit_flag = True
+                    elif cmd == 'SET' and len(params) == 2:
+                        name, v = params
+                        if name in self.channel_names:
+                            if self.channel[name].port is not None:
+                                if v in ('ON', 'OFF'):
+                                    self.channel[name].enabled = (v == 'ON')
+                                elif v.isdigit():
+                                    self.channel[name].setpoint = float(v)
+                                else:
+                                    err = 'ERROR: Bad SET parameter: %s' % v
+                            else:
+                                err = 'ERROR: Channel "%s" has no control port.' % name
+                        else:
+                            err = 'ERROR: Bad channel name: %s' % c
+                    else:
+                        err = 'ERROR: Bad command: %s' % msg
+
+                    self.rsp_queue.put(err if err else 'OK')
+                    continue
+
+            # print('seedling control: update')
 
             relays = ~self.gpio.olat()
             for chan in self.channels:
-                chan.temps = []
-                for sens in chan.temp_sensors:
-                    sens.convert_t()
-                    chan.temps.append(to_fahrenheit(sens.temperature))
+                chan.temp_sensor.convert_t()
+                chan.temp = to_fahrenheit(chan.temp_sensor.temperature)
 
-                if chan.setpoint and len(chan.temps):
-                    t = chan.temps[0]
-                    if t < chan.setpoint - HYSTERESIS:
-                        relays |= chan.relay_port
-                    elif t > chan.setpoint + HYSTERESIS:
-                        relays &= ~chan.relay_port
+                if chan.port is None:
+                    continue
+
+                if chan.enabled:
+                    if chan.temp < chan.setpoint - HYSTERESIS:
+                        relays |= chan.port
+                    elif chan.temp > chan.setpoint + HYSTERESIS:
+                        relays &= ~chan.port
                 else:
-                    relays &= ~chan.relay_port
-                chan.relay = relays & chan.relay_port != 0
+                    relays &= ~chan.port
+                chan.relay = relays & chan.port != 0
 
             relays &= RELAY_MASK
             self.gpio.olat(RELAY_MASK, ~relays)
 
-            # Time to next cycle
-            t = time.monotonic()
-            t = CYCLE_TIME - t % CYCLE_TIME
+            t_next += CYCLE_TIME
 
-            # print('control wait %.3f' % t)
-            try:
-                msg = self.mequeue.get(timeout=t).lower()
-            except queue.Empty:
-                pass
-            else:
-                print('control msg: %s' % msg)
-
-                if msg == 'end':
-                    exit_flag = True
-                else:
-                    err = None
-                    msg = msg.split()
-                    if len(msg) == 3 and msg[0] == 'set':
-                        try:
-                            n = int(msg[1])
-                            if not 0 < n < NCHANNELS + 1:
-                                raise ValueError('Channel number must be from 1 to %d' % NCHANNELS)
-                            sp = float(msg[2])
-                            self.channels[n - 1].setpoint = sp
-                        except ValueError as e:
-                            err = 'Bad command: %s' % e
-                    elif len(msg) == 1 and msg[0] == 'stat':
-                        pass
-                    else:
-                        err = 'Bad command: %s' % ' '.join(msg)
-
-                    if err:
-                        self.rqueue.put('ERROR: %s' % err)
-                    else:
-                        self.rqueue.put(list(chan.status() for chan in self.channels))
-
-        print('control shutdown')
+        print('seedling control: shutdown')
         self.gpio.output_high(RELAY_MASK).config_input(RELAY_MASK)
-

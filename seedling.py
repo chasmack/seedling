@@ -19,66 +19,65 @@ def clear_queue(q):
 if __name__ == '__main__':
 
     pid = os.getpid()
-    print('main pid %d' % pid)
+    print('seedling: pid %d' % pid)
     with open(PID_FILE, 'w') as f:
         f.write(str(pid))
 
-    mqueue = Queue()
-    rqueue = Queue()
-    app.config['mqueue'] = mqueue
-    app.config['rqueue'] = rqueue
-    control = Control(mqueue, rqueue)
+    msg_queue = Queue()
+    rsp_queue = Queue()
+    app.config['msg_queue'] = msg_queue
+    app.config['rsp_queue'] = rsp_queue
+    control = Control(msg_queue, rsp_queue)
 
     control_proc = Process(target=control.main_loop, daemon=False)
     control_proc.start()
-    print('main control process started, daemon: %s' % control_proc.daemon)
+    # print('seedling: control process started, daemon: %s' % control_proc.daemon)
 
     # serve(app, listen='0.0.0.0:8080')
     web_proc = Process(target=serve, args=(app,), kwargs={'listen': '0.0.0.0:8080'}, daemon=False)
     web_proc.start()
-    print('main web process started, daemon: %s' % web_proc.daemon)
+    # print('seedling: web process started, daemon: %s' % web_proc.daemon)
 
-    def term_handler(sig, context):
+    def signal_handler(sig, context):
         global exit_flag
-        exit_flag = True
-        print('main handler for %s' % sig)
-    signal.signal(signal.SIGTERM, term_handler)
+        if sig == signal.SIGTERM:
+            exit_flag = True
+
+    signal.signal(signal.SIGTERM, signal_handler)
 
     exit_flag = False
     while not exit_flag:
 
         siginfo = signal.sigtimedwait([signal.SIGTERM], 5)
-        if siginfo is None and control_proc.is_alive() and web_proc.is_alive():
-            pass
-        else:
+        if not control_proc.is_alive() or not web_proc.is_alive():
+            exit_flag = True
+        elif siginfo and siginfo.si_signo == signal.SIGTERM:
             exit_flag = True
 
     if web_proc.is_alive():
-        print('main terminate web')
+        print('seedling: terminate web')
         os.kill(web_proc.pid, signal.SIGTERM)
 
     if control_proc.is_alive():
-        print('main terminate control')
-        clear_queue(mqueue)
-        mqueue.put('end')
+        print('seedling: terminate control')
+        clear_queue(msg_queue)
+        msg_queue.put('end')
 
     # Give control loop time to update instrumentation
     time.sleep(2.5)
 
-    print('main clear message queue')
-    clear_queue(mqueue)
+    print('seedling: clear queues')
+    clear_queue(msg_queue)
+    clear_queue(rsp_queue)
 
-    print('main clear response queue')
-    clear_queue(rqueue)
-
-    print('main join web')
+    print('seedling: join web')
     web_proc.join()
 
-    print('main join control')
+    print('seedling: join control')
     control_proc.join()
 
-    print('main shutdown input/output')
+    print('seedling: shutdown input/output')
     shutdown()
 
-    print('main done')
+    print('seedling: done')
     exit(0)

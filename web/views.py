@@ -2,31 +2,39 @@ import queue
 
 from flask import request
 from flask import render_template, flash
+from flask.json import jsonify, dumps
+
 
 from web import app
 
-@app.route('/test', methods=['GET'])
+@app.route('/stat', methods=['GET'])
 def test():
-    return 'test'
+
+    app.config['msg_queue'].put('STAT')
+    try:
+        status = app.config['rsp_queue'].get(timeout=5.0)
+        resp = jsonify(status)
+    except queue.Empty:
+        resp = ''
+
+    return resp
+
 
 @app.route('/', methods=['GET'])
 def seedling():
 
     msg = request.args.get('msg', '')
-    mqueue = app.config['mqueue']
     if msg != '':
-        mqueue.put(msg)
-    else:
-        mqueue.put('stat')
+        app.config['msg_queue'].put(msg)
+        try:
+            result = app.config['rsp_queue'].get(timeout=5.0)
+        except queue.Empty:
+            flash('ERROR: No response from controller.', 'error')
+        else:
+            if result.startswith('ERROR'):
+                flash(result, 'error')
 
-    rqueue = app.config['rqueue']
-    try:
-        status = rqueue.get(timeout=5.0)
-    except queue.Empty:
-        flash('ERROR: No response from controller.', 'error')
-        status = ()
-
-    return render_template('seedling.html', status=status)
+    return render_template('seedling.html')
 
 #
 # HTTP error handlers
