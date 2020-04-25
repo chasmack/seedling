@@ -35,25 +35,29 @@ def shutdown():
     MCP23008(i2c).output_high(RELAY_MASK).config_input(RELAY_MASK)
 
 class ControlChannel:
-    def __init__(self, name, temp_id, port, onewire, convert_res):
+
+    # Channels with no control port represent auxiliary temperature channels
+    def __init__(self, name, temp_id, onewire, port=None):
         self.name = name
         self.temp_id = temp_id
+        self.sensor =  DS18B20(onewire, DS18B20_SENSORS[temp_id], convert_res=CONVERT_RES)
         self.port = port
-        self.enabled = None
-        self.relay = None
-        self.setpoint = None
-        self.temp_sensor =  DS18B20(onewire, DS18B20_SENSORS[temp_id], convert_res=convert_res)
         self.temp = None
+        self.enabled = False
+        self.set = None
+        self.relay = None
 
-    def status(self):
+    def stat(self):
         return {
             'name': self.name,
+            'temp': self.temp,
             'enabled': self.enabled,
-            'relay': self.relay,
-            'set': self.setpoint,
+            'set': self.set,
+            'relay': self.relay
+        } if self.port is not None else {
+            'name': self.name,
             'temp': self.temp
         }
-
 
 class Control:
 
@@ -68,48 +72,50 @@ class Control:
         # Initialize the 1-wire bus and temperature sensors
         self.onewire = DS2482(self.i2c, active_pullup=True)
 
-        # Initialize the control channels
-
-        self.channel = {}
+        # Initialize the control and auxiliary temperature channels
+        self.ctl_chan = {}
+        self.aux_chan = {}
         for name, temp_id, port in CHAN_PARAMS :
-            self.channel[name] = ControlChannel(name, temp_id, port, self.onewire, CONVERT_RES)
+            if port is None:
+                self.aux_chan[name] = ControlChannel(name, temp_id, self.onewire)
+            else:
+                self.ctl_chan[name] = ControlChannel(name, temp_id, self.onewire, port)
 
-        # Initialize setpoint and enabled from startup file
+        # Initialize control channels from the startup file
         with open(STARTUP_FILE) as f:
-            regex = re.compile('(%s):(\d+):(ON|OFF)' % '|'.join(self.channel_names))
+            regex = re.compile('(%s):(\d+):(ON|OFF)' % '|'.join(self.ctl_names))
             for line in f:
                 line = line.strip()
                 if line.startswith('#') or line == '':
                     continue
                 try:
                     name, sp, en = regex.fullmatch(line).groups()
-                    chan = self.channel[name]
-                    if chan.port is not None:
-                        chan.setpoint = float(sp)
-                        chan.enabled = (en == 'ON')
-                    else:
-                        print('seedling control: Channel "%s" has not control port' % name)
+                    chan = self.ctl_chan[name]
+                    chan.set = int(sp)
+                    chan.enabled = (en == 'ON')
                 except AttributeError:
                     print('seedling control: Bad startup command: %s' % line)
 
         self.msg_queue = msg_queue
         self.rsp_queue = rsp_queue
 
+    # Sorted lists of channels and channel names
 
     @property
-    def channels(self):
-        ctl_chans = []
-        aux_chans = []
-        for chan in sorted(self.channel.values(), key=lambda c: c.name):
-            if chan.port is None:
-                aux_chans.append(chan)
-            else:
-                ctl_chans.append(chan)
-        return ctl_chans + aux_chans
+    def ctl_chans(self):
+         return sorted(self.ctl_chan.values(), key=lambda c: c.name)
 
     @property
-    def channel_names(self):
-        return list(c.name for c in self.channels)
+    def ctl_names(self):
+        return sorted(self.ctl_chan.keys())
+
+    @property
+    def aux_chans(self):
+         return sorted(self.aux_chan.values(), key=lambda c: c.name)
+
+    @property
+    def aux_names(self):
+        return sorted(self.aux_chan.keys())
 
     def main_loop(self):
 
@@ -140,24 +146,31 @@ class Control:
                     cmd, *params = msg.upper().split()
                     if cmd == 'STAT':
                         stat = {
-                            'chans': list(c.status() for c in self.channels)
+                            'ctl_chans': list(chan.stat() for chan in self.ctl_chans),
+                            'aux_chans': list(chan.stat() for chan in self.aux_chans)
                         }
                         self.rsp_queue.put(stat)
                         continue
                     elif cmd == 'END':
                         exit_flag = True
                     elif cmd == 'SET' and len(params) == 2:
-                        name, v = params
-                        if name in self.channel_names:
-                            if self.channel[name].port is not None:
-                                if v in ('ON', 'OFF'):
-                                    self.channel[name].enabled = (v == 'ON')
-                                elif v.isdigit():
-                                    self.channel[name].setpoint = float(v)
-                                else:
-                                    err = 'ERROR: Bad SET parameter: %s' % v
+                        name, val = params
+                        if name in self.ctl_names:
+                            if val in ('ON', 'OFF'):
+                                self.ctl_chan[name].enabled = (val == 'ON')
+
+                            elif val.startswith('+') and val[1:].isdigit():
+                                self.ctl_chan[name].set += int(val[1:])
+
+                            elif val.startswith('-') and val[1:].isdigit():
+                                self.ctl_chan[name].set -= int(val[1:])
+
+                            elif val.isdigit():
+                                self.ctl_chan[name].set = int(val)
+
                             else:
-                                err = 'ERROR: Channel "%s" has no control port.' % name
+                                err = 'ERROR: Bad SET parameter: %s' % val
+
                         else:
                             err = 'ERROR: Bad channel name: %s' % c
                     else:
@@ -168,18 +181,18 @@ class Control:
 
             # print('seedling control: update')
 
+            for chan in self.aux_chans:
+                chan.sensor.convert_t()
+                chan.temp = to_fahrenheit(chan.sensor.temperature)
+
             relays = ~self.gpio.olat()
-            for chan in self.channels:
-                chan.temp_sensor.convert_t()
-                chan.temp = to_fahrenheit(chan.temp_sensor.temperature)
-
-                if chan.port is None:
-                    continue
-
+            for chan in self.ctl_chans:
+                chan.sensor.convert_t()
+                chan.temp = to_fahrenheit(chan.sensor.temperature)
                 if chan.enabled:
-                    if chan.temp < chan.setpoint - HYSTERESIS:
+                    if chan.temp < chan.set - HYSTERESIS:
                         relays |= chan.port
-                    elif chan.temp > chan.setpoint + HYSTERESIS:
+                    elif chan.temp > chan.set + HYSTERESIS:
                         relays &= ~chan.port
                 else:
                     relays &= ~chan.port

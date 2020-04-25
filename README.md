@@ -1,8 +1,9 @@
 # Seedling Control
 
-A Pulse Width Modulated (PWM) controller for seedling heat mats.
+A bang-bang temperature controller for seedling heat mats. 
 
-Implements four independent channels of PWM control. Each channel 
-has a DS18B20 1-Wire temperature sensor for feedback. 
-A fifth DS18B20 is available for ambient temperature. 
+Implements four independent channels of control. 
+Each channel uses a DS18B20 1-Wire temperature sensor for feedback. 
+Additional DS18B20 sensors can be configured to monitor auxiliary temperatures. 
 A web interface is provided to monitor and adjust temperatures. 
+The top level monitor process runs as a SYSTEMD(1) service. 

@@ -3,9 +3,7 @@
 {%- block title %}Seedling Control{% endblock title %}
 {%- block styles %}
 {{- super() }}
-<style>
-h1.chan-name {color:#1e88e5;}
-</style>
+<style></style>
 {%- endblock styles -%}
 
 <!--{%- block navigation %}-->
@@ -36,14 +34,13 @@ h1.chan-name {color:#1e88e5;}
       <table class="table">
         <thead>
           <tr>
-            <th>Name</th>
-            <th>Temp</th>
-            <th>Set</th>
-            <th>On/Off</th>
+            <th style="width: 25%;">Channel</th>
+            <th style="width: 25%;">Temp</th>
+            <th style="width: 25%; padding-left: 45px;">Set</th>
+            <th style="width: 25%;">Heat</th>
           </tr>
         </thead>
-        <tbody>
-        </tbody>
+        <tbody></tbody>
       </table>
     </div>
 
@@ -57,41 +54,82 @@ h1.chan-name {color:#1e88e5;}
     <script src="{{ url_for('static', filename='js/seedling.js') }}"></script>
     <script>
 
-function update_chans() {
-  $.get('/stat', function(data) {
+var ctl_template =
+      '<tr class="ctl-chan #state#">\n' +
+      '  <th scope="row">#name#</th>\n' +
+      '  <td>#temp#</td>\n' +
+      '  <td>\n' +
+      '    <button type="button" class="btn btn-xs set-minus" style="background-color: rgba(0,0,0,0);">\n' +
+      '      <span class="glyphicon glyphicon-minus"></span>\n' +
+      '    </button>\n' +
+      '    <span style="margin: 0 15px;">#set#</span>\n' +
+      '    <button type="button" class="btn btn-xs set-plus" style="background-color: rgba(0,0,0,0);">\n' +
+      '      <span class="glyphicon glyphicon-plus"></span>\n' +
+      '    </button>\n' +
+      '  </td>\n' +
+      '  <td>#relay#</td>\n' +
+      '</tr>\n';
+
+var aux_template =
+      '<tr class="aux-chan">\n' +
+      '  <th scope="row">#name#</th>\n' +
+      '  <td>#temp#</td>\n' +
+      '  <td rowspan="2"></td>\n'
+      '</tr>\n';
+
+function update_chans(cmd) {
+  var stat = '/stat';
+  if (cmd) {
+     stat += '?msg=' + encodeURIComponent(cmd);
+  }
+  $.get(stat, function(data) {
     console.log(data);
-    $tbody = $('#chan-table tbody').empty()
-    data.chans.forEach(function(chan) {
-      var row = '';
-      if (chan.enabled === null) {
-        row += '<tr>\n';
-        row += '<th scope="row">' + chan.name + '</th>\n';
-        row += '<td>' + chan.temp.toFixed(1) + '&deg;</td>\n';
-        row += '<td></td>\n';
-        row += '<td></td>\n';
-        row += '</tr>\n';
-
-      } else if (chan.enabled) {
-        row += '<tr class="success">\n';
-        row += '<th scope="row">' + chan.name + '</th>\n';
-        row += '<td>' + chan.temp.toFixed(1) + '&deg;</td>\n';
-        row += '<td>' + chan.set.toFixed(0) + '&deg;</td>\n';
-        row += '<td>' + (chan.relay ? 'ON' : 'OFF') + '</td>\n';
-        row += '</tr>\n';
-
-      } else {
-        row += '<tr>\n';
-        row += '<th scope="row">' + chan.name + '</th>\n';
-        row += '<td>' + chan.temp.toFixed(1) + '&deg;</td>\n';
-        row += '<td>' + chan.set.toFixed(0) + '&deg;</td>\n';
-        row += '<td>' + (chan.relay ? 'ON' : 'OFF') + '</td>\n';
-        row += '</tr>\n';
-
-      }
-      $tbody.append(row);
+    var rows = '';
+    data.ctl_chans.forEach(function(chan) {
+      rows += ctl_template
+          .replace('#state#', chan.enabled ? 'success' : '')
+          .replace('#name#', chan.name)
+          .replace('#temp#', chan.temp.toFixed(1) + '&deg;')
+          .replace('#set#', chan.set.toString() + '&deg;</span>')
+          .replace('#relay#', chan.relay ? 'ON' : 'OFF');
     });
+    data.aux_chans.forEach(function(chan) {
+      rows += aux_template
+          .replace('#name#', chan.name)
+          .replace('#temp#', chan.temp.toFixed(1) + '&deg;');
+    });
+    $('#chan-table tbody').empty().append(rows);
   });
 }
+
+$('#chan-table').on('click', 'tr.ctl-chan', function (e) {
+
+  var channel = $(this).closest('tr').find('th').text();
+
+  if (this.classList.contains('success')) {
+    this.classList.remove('success');
+    update_chans('SET ' + channel + ' OFF');
+  } else {
+    this.classList.add('success');
+    update_chans('SET ' + channel + ' ON');
+  }
+
+}).on('click', 'button', function (e) {
+
+  e.stopPropagation();
+
+  var channel = $(this).closest('tr').find('th').text();
+  var $span = $(this).siblings('span');
+  var temp = parseInt($span.text());
+
+  if (this.classList.contains('set-minus')) {
+    $span.empty().append((temp - 1).toString() + '&deg;');
+    update_chans('SET ' + channel + ' -1');
+  } else {
+    $span.empty().append((temp + 1).toString() + '&deg;');
+    update_chans('SET ' + channel + ' +1');
+  }
+});
 
 $(function() {
   update_chans();

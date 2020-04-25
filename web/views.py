@@ -8,7 +8,14 @@ from flask.json import jsonify, dumps
 from web import app
 
 @app.route('/stat', methods=['GET'])
-def test():
+def stat():
+    msg = request.args.get('msg', '')
+    if msg != '':
+        app.config['msg_queue'].put(msg)
+        try:
+            result = app.config['rsp_queue'].get(timeout=5.0)
+        except queue.Empty:
+            pass
 
     app.config['msg_queue'].put('STAT')
     try:
