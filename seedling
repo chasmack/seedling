@@ -7,12 +7,8 @@ case "$1" in
   stop)
         cd /home/pi/projects/seedling && kill -SIGTERM `cat seedling.pid`
         ;;
-  restart)
-        stop
-        start
-        ;;
   *)
-        echo $"Usage: $0 {start|stop|restart}"
+        echo $"Usage: $0 {start|stop}"
         exit 1
 esac
 
