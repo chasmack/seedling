@@ -128,7 +128,6 @@ class Control:
 
             # print('seedling control: loop')
 
-            t = time.monotonic()
             t_wait = t_next - time.monotonic()
 
             if t_wait > 0:
@@ -140,6 +139,7 @@ class Control:
                     # No message, update instrumentation
                     pass
                 else:
+                    # Process message then back to top of control loop
                     # print('seedling control: msg=%s' % msg)
 
                     resp = None
