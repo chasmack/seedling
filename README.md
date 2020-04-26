@@ -28,6 +28,4 @@ A response queue acknowledges commands and provides system status.
 A simple Flask web app displays the system status and allows control channels to be 
 enabled/disabled and the setpoint adjusted. 
 
-![Seedling Web UI][web-ui]
-
-[logo]: https://github.com/chasmack/seedling/blob/master/docs/screenshot.png "Seedling Web UI"
+![Seedling Web UI](https://github.com/chasmack/seedling/blob/master/docs/screenshot.png "Seedling Web UI")
