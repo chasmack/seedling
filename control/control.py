@@ -17,6 +17,7 @@ CYCLE_TIME = 5
 HYSTERESIS = 1.0
 CONVERT_RES = CONVERT_RES_10_BIT
 
+# Channel name, temperature sensor ID and optional relay port
 CHAN_PARAMS = (
     ('A', 'C1', PORT_A0),
     ('B', 'C2', PORT_A1),
@@ -27,7 +28,7 @@ CHAN_PARAMS = (
 
 RELAY_MASK = PORT_A0 | PORT_A1 | PORT_A2 | PORT_A3
 
-STARTUP_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), 'startup.config'))
+STARTUP_FILE = os.path.join(os.path.dirname(__file__), 'startup.config')
 
 # Standalone procedure to shutdown the IO
 def shutdown():
@@ -85,7 +86,7 @@ class Control:
         with open(STARTUP_FILE) as f:
             regex = re.compile('(%s):(\d+):(ON|OFF)' % '|'.join(self.ctl_names))
             for line in f:
-                line = line.strip()
+                line = line.strip().upper()
                 if line.startswith('#') or line == '':
                     continue
                 try:
@@ -100,7 +101,6 @@ class Control:
         self.rsp_queue = rsp_queue
 
     # Sorted lists of channels and channel names
-
     @property
     def ctl_chans(self):
          return sorted(self.ctl_chan.values(), key=lambda c: c.name)
@@ -142,15 +142,13 @@ class Control:
                 else:
                     # print('seedling control: msg=%s' % msg)
 
-                    err = None
-                    cmd, *params = msg.upper().split()
+                    resp = None
+                    cmd, *params = msg.strip().upper().split()
                     if cmd == 'STAT':
-                        stat = {
+                        resp = {
                             'ctl_chans': list(chan.stat() for chan in self.ctl_chans),
                             'aux_chans': list(chan.stat() for chan in self.aux_chans)
                         }
-                        self.rsp_queue.put(stat)
-                        continue
                     elif cmd == 'END':
                         exit_flag = True
                     elif cmd == 'SET' and len(params) == 2:
@@ -158,25 +156,20 @@ class Control:
                         if name in self.ctl_names:
                             if val in ('ON', 'OFF'):
                                 self.ctl_chan[name].enabled = (val == 'ON')
-
                             elif val.startswith('+') and val[1:].isdigit():
                                 self.ctl_chan[name].set += int(val[1:])
-
                             elif val.startswith('-') and val[1:].isdigit():
                                 self.ctl_chan[name].set -= int(val[1:])
-
                             elif val.isdigit():
                                 self.ctl_chan[name].set = int(val)
-
                             else:
-                                err = 'ERROR: Bad SET parameter: %s' % val
-
+                                resp = 'ERROR: Bad SET parameter: %s' % val
                         else:
-                            err = 'ERROR: Bad channel name: %s' % c
+                            resp = 'ERROR: Bad control channel name: %s' % name
                     else:
-                        err = 'ERROR: Bad command: %s' % msg
+                        resp = 'ERROR: Bad command: %s' % msg
 
-                    self.rsp_queue.put(err if err else 'OK')
+                    self.rsp_queue.put(resp if resp else 'OK')
                     continue
 
             # print('seedling control: update')
@@ -185,21 +178,26 @@ class Control:
                 chan.sensor.convert_t()
                 chan.temp = to_fahrenheit(chan.sensor.temperature)
 
+            # Get current outputs and invert to use active high logic
             relays = ~self.gpio.olat()
             for chan in self.ctl_chans:
                 chan.sensor.convert_t()
                 chan.temp = to_fahrenheit(chan.sensor.temperature)
                 if chan.enabled:
                     if chan.temp < chan.set - HYSTERESIS:
+                        # Turn the relay port ON
                         relays |= chan.port
                     elif chan.temp > chan.set + HYSTERESIS:
+                        # Turn the relay port OFF
                         relays &= ~chan.port
                 else:
+                    # Ensure disabled channels are OFF
                     relays &= ~chan.port
-                chan.relay = relays & chan.port != 0
 
-            relays &= RELAY_MASK
-            self.gpio.olat(RELAY_MASK, ~relays)
+                # Update channel relay status
+                chan.relay = (relays & chan.port) != 0
+
+            self.gpio.olat(RELAY_MASK, ~relays & 0xFF)
 
             t_next += CYCLE_TIME
 
