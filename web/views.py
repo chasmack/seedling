@@ -4,42 +4,35 @@ from flask import request
 from flask import render_template, flash
 from flask.json import jsonify, dumps
 
-
 from web import app
 
 @app.route('/stat', methods=['GET'])
 def stat():
-    msg = request.args.get('msg', '')
-    if msg != '':
-        app.config['msg_queue'].put(msg)
-        try:
-            result = app.config['rsp_queue'].get(timeout=5.0)
-        except queue.Empty:
-            pass
 
-    app.config['msg_queue'].put('STAT')
+    app.config['msg_queue'].put('stat')
     try:
-        status = app.config['rsp_queue'].get(timeout=5.0)
-        resp = jsonify(status)
+        rsp = app.config['rsp_queue'].get(timeout=5.0)
     except queue.Empty:
-        resp = ''
+        rsp = {'error': 'No response from controller.'}
 
-    return resp
-
+    return jsonify(rsp)
 
 @app.route('/', methods=['GET'])
 def seedling():
 
-    msg = request.args.get('msg', '')
-    if msg != '':
+    msg = request.args.get('msg')
+    if msg:
         app.config['msg_queue'].put(msg)
         try:
-            result = app.config['rsp_queue'].get(timeout=5.0)
+            rsp = app.config['rsp_queue'].get(timeout=5.0)
         except queue.Empty:
-            flash('ERROR: No response from controller.', 'error')
-        else:
-            if result.startswith('ERROR'):
-                flash(result, 'error')
+            rsp = {'error': 'No response from controller.'}
+
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify(rsp)
+
+        elif rsp['error']:
+            flash(rsp['error'], 'error')
 
     return render_template('seedling.html')
 

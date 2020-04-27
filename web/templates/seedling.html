@@ -35,6 +35,7 @@
 
 {% block page %}
 <!-- begin page content block -->
+
     <div id="chan-table">
       <table class="table">
         <thead>
@@ -70,7 +71,7 @@ var ctl_template =
       '      <span class="glyphicon glyphicon-minus"></span>\n' +
       '    </button>\n' +
       '  </td><td>\n' +
-      '    <span>#set#</span>\n' +
+      '    <span class="setpoint">#set#</span>\n' +
       '  </td><td>\n' +
       '    <button type="button" class="btn btn-xs set-plus">\n' +
       '      <span class="glyphicon glyphicon-plus"></span>\n' +
@@ -83,13 +84,30 @@ var aux_template =
       '<tr class="aux-chan">\n' +
       '  <th scope="row">#name#</th>\n' +
       '  <td>#temp#</td>\n' +
-      '  <td colspan="4"></td>\n'
+      '  <td colspan="4"></td>\n' +
       '</tr>\n';
 
-function update_chans(cmd) {
+var alert_template =
+    '<div class="alert alert-danger alert-dismissible fade in" role="alert">\n' +
+    '  <button type="button" class="close" data-dismiss="alert"><span>×</span></button>\n' +
+    '  <h4>You got an error!</h4>\n' +
+    '  <p>#error#</p>\n' +
+    '</div>';
+
+function send_msg(msg) {
+  const url = '/?msg=' + encodeURIComponent(msg);
+  $.get(url, function(data) {
+    console.log(data);
+    if (data.error) {
+      $('#chan-table').before(alert_template.replace('#error#', data.error));
+    }
+  });
+}
+
+function update_chans(msg) {
   var stat = '/stat';
-  if (cmd) {
-     stat += '?msg=' + encodeURIComponent(cmd);
+  if (msg) {
+     stat += '?msg=' + encodeURIComponent(msg);
   }
   $.get(stat, function(data) {
     console.log(data);
@@ -107,36 +125,36 @@ function update_chans(cmd) {
           .replace('#name#', chan.name)
           .replace('#temp#', chan.temp.toFixed(1) + '&deg;');
     });
-    $('#chan-table tbody').empty().append(rows);
+    $('#chan-table').find('tbody').empty().append(rows);
   });
 }
 
 $('#chan-table').on('click', 'tr.ctl-chan', function (e) {
 
-  var channel = $(this).closest('tr').find('th').text();
+  const channel = $(this).closest('tr').find('th').text();
 
   if (this.classList.contains('success')) {
     this.classList.remove('success');
-    update_chans('SET ' + channel + ' OFF');
+    send_msg('SET ' + channel + ' OFF');
   } else {
     this.classList.add('success');
-    update_chans('SET ' + channel + ' ON');
+    send_msg('SET ' + channel + ' ON');
   }
 
 }).on('click', 'button', function (e) {
 
   e.stopPropagation();
 
-  var channel = $(this).closest('tr').find('th').text();
-  var $span = $(this).siblings('span');
-  var temp = parseInt($span.text());
+  const $row = $(this).closest('tr')
+  const channel = $row.find('th').text();
+  const setpoint = parseInt($row.find('span.setpoint').text());
 
   if (this.classList.contains('set-minus')) {
-    $span.empty().append((temp - 1).toString() + '&deg;');
-    update_chans('SET ' + channel + ' -1');
+    $row.find('span.setpoint').empty().append((setpoint - 1).toString() + '&deg;');
+    send_msg('SET ' + channel + ' -1');
   } else {
-    $span.empty().append((temp + 1).toString() + '&deg;');
-    update_chans('SET ' + channel + ' +1');
+    $row.find('span.setpoint').empty().append((setpoint + 1).toString() + '&deg;');
+    send_msg('SET ' + channel + ' +1');
   }
 });
 

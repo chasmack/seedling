@@ -142,13 +142,13 @@ class Control:
                     # Process message then back to top of control loop
                     # print('seedling control: msg=%s' % msg)
 
-                    resp = None
+                    resp = {'error': None}
                     cmd, *params = msg.strip().upper().split()
                     if cmd == 'STAT':
-                        resp = {
+                        resp.update({
                             'ctl_chans': list(chan.stat() for chan in self.ctl_chans),
                             'aux_chans': list(chan.stat() for chan in self.aux_chans)
-                        }
+                        })
                     elif cmd == 'END':
                         exit_flag = True
                     elif cmd == 'SET' and len(params) == 2:
@@ -163,13 +163,13 @@ class Control:
                             elif val.isdigit():
                                 self.ctl_chan[name].set = int(val)
                             else:
-                                resp = 'ERROR: Bad SET parameter: %s' % val
+                                resp.update({'error': 'Bad SET parameter: %s' % val})
                         else:
-                            resp = 'ERROR: Bad control channel name: %s' % name
+                            resp.update({'error': 'Bad control channel name: %s' % name})
                     else:
-                        resp = 'ERROR: Bad command: %s' % msg
+                        resp.update({'error': 'Bad command: %s' % msg})
 
-                    self.rsp_queue.put(resp if resp else 'OK')
+                    self.rsp_queue.put(resp)
                     continue
 
             # print('seedling control: update')
