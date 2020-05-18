@@ -10,7 +10,7 @@ KillMode=mixed
 TimeoutStopSec=10
 StandardOutput=inherit
 StandardError=inherit
-Restart=always
+Restart=no
 User=pi
 
 [Install]

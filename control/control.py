@@ -7,8 +7,7 @@ import itertools
 import board
 import busio
 from control.ds2482 import DS2482
-from control.ds18b20 import DS18B20, DS18B20_SENSORS
-from control.ds18b20 import CONVERT_RES_9_BIT, CONVERT_RES_10_BIT, CONVERT_RES_11_BIT, CONVERT_RES_12_BIT
+from control.ds18b20 import DS18B20, OneWireDataError, CONVERT_RES_10_BIT
 from control.ds18b20 import to_fahrenheit
 from control.mcp23008 import MCP23008
 from control.mcp23008 import PORT_A0, PORT_A1, PORT_A2, PORT_A3
@@ -41,7 +40,7 @@ class ControlChannel:
     def __init__(self, name, temp_id, onewire, port=None):
         self.name = name
         self.temp_id = temp_id
-        self.sensor =  DS18B20(onewire, DS18B20_SENSORS[temp_id], convert_res=CONVERT_RES)
+        self.sensor =  DS18B20(onewire, temp_id, res=CONVERT_RES)
         self.port = port
         self.temp = None
         self.enabled = False
@@ -82,8 +81,14 @@ class Control:
             else:
                 self.ctl_chan[name] = ControlChannel(name, temp_id, self.onewire, port)
 
-        # Initialize control channels from the startup file
-        with open(STARTUP_FILE) as f:
+        self.msg_queue = msg_queue
+        self.rsp_queue = rsp_queue
+
+        self.load_defaults(STARTUP_FILE)
+
+    # Initialize control channels from the startup file
+    def load_defaults(self, filename):
+        with open(filename) as f:
             regex = re.compile('(%s):(\d+):(ON|OFF)' % '|'.join(self.ctl_names))
             for line in f:
                 line = line.strip().upper()
@@ -97,8 +102,12 @@ class Control:
                 except AttributeError:
                     print('seedling control: Bad startup command: %s' % line)
 
-        self.msg_queue = msg_queue
-        self.rsp_queue = rsp_queue
+    # Save control channel configuration to the startup file
+    def save_defaults(self, filename):
+        with open(filename, 'w') as f:
+            f.write('# Setpoints at startup\n')
+            for chan in self.ctl_chans:
+                f.write(('%s:%d:%s' %(chan.name, chan.set, 'ON' if chan.enabled else 'OFF')))
 
     # Sorted lists of channels and channel names
     @property
@@ -174,30 +183,36 @@ class Control:
 
             # print('seedling control: update')
 
-            for chan in self.aux_chans:
-                chan.sensor.convert_t()
-                chan.temp = to_fahrenheit(chan.sensor.temperature)
+            # Update temperatures
+            for chan in self.ctl_chans + self.aux_chans:
+                try:
+                    chan.sensor.convert_t()
+                    chan.temp = to_fahrenheit(chan.sensor.temperature)
+                except OneWireDataError as e:
+                    print('seedling control: DS18b20 measurement error: %s' % e)
+                    exit_flag = True
+                    break
 
-            # Get current outputs and invert to use active high logic
-            relays = ~self.gpio.olat()
-            for chan in self.ctl_chans:
-                chan.sensor.convert_t()
-                chan.temp = to_fahrenheit(chan.sensor.temperature)
-                if chan.enabled:
-                    if chan.temp < chan.set - HYSTERESIS:
-                        # Turn the relay port ON
-                        relays |= chan.port
-                    elif chan.temp > chan.set + HYSTERESIS:
-                        # Turn the relay port OFF
+            if not exit_flag:
+
+                # Get current outputs and invert to use active high logic
+                relays = ~self.gpio.olat()
+                for chan in self.ctl_chans:
+                    if chan.enabled:
+                        if chan.temp < chan.set - HYSTERESIS:
+                            # Turn the relay port ON
+                            relays |= chan.port
+                        elif chan.temp > chan.set + HYSTERESIS:
+                            # Turn the relay port OFF
+                            relays &= ~chan.port
+                    else:
+                        # Ensure disabled channels are OFF
                         relays &= ~chan.port
-                else:
-                    # Ensure disabled channels are OFF
-                    relays &= ~chan.port
 
-                # Update channel relay status
-                chan.relay = (relays & chan.port) != 0
+                    # Update channel relay status
+                    chan.relay = (relays & chan.port) != 0
 
-            self.gpio.olat(RELAY_MASK, ~relays & 0xFF)
+                self.gpio.olat(RELAY_MASK, ~relays & 0xFF)
 
             t_next += CYCLE_TIME
 

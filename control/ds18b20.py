@@ -93,11 +93,13 @@ class DS18B20:
             crc = CRC_LOOKUP[crc ^ b]
         return crc
 
-    def __init__(self, onewire, rom=None, convert_res=CONVERT_RES_11_BIT):
+    def __init__(self, onewire, id=None, res=CONVERT_RES_11_BIT):
         self._ow = onewire
-        self._rom = rom
+        self._id = id
+        self._rom = DS18B20_SENSORS[id] if id else None
         self._parasitic = self.parasitic_power
-        self.set_resolution(convert_res)
+        self._convert_res = res
+        self.set_resolution(res)
 
     def select(self):
         self._ow.wait_ready()
@@ -109,11 +111,11 @@ class DS18B20:
         else:
             self._ow.write_byte(COMMAND_ROM_SKIP)
 
-    def set_resolution(self, convert_res):
+    def set_resolution(self, res):
         scratch = self.scratchpad[2:5]
-        scratch[2] = convert_res
+        scratch[2] = res
         self.scratchpad = scratch
-        self.convert_res = convert_res
+        self._convert_res = res
 
     @property
     def parasitic_power(self):
@@ -125,7 +127,10 @@ class DS18B20:
     @property
     def temperature(self):
         t = int.from_bytes(self.scratchpad[0:2], byteorder='little', signed=True)
-        return (t & ~CONVERT_MASK[self.convert_res]) / 16.0
+        if t == 0x0550:
+            # Value at power on reset generally indicates conversion error
+            raise OneWireDataError('Bad conversion id=%s: 0x0550' % self._id)
+        return (t & ~CONVERT_MASK[self._convert_res]) / 16.0
 
     @property
     def scratchpad(self):
@@ -135,7 +140,8 @@ class DS18B20:
         for i in range(9):
             buf[i] = self._ow.read_byte()
         if DS18B20.calc_crc(buf):
-            raise OneWireDataError('Bad CRC: %s' % ' '.join(hex(i) for i in buf))
+            hexdata = ':'.join('%02X' % i for i in buf)
+            raise OneWireDataError('Bad CRC id=%s: %s' % (self._id, hexdata))
         return buf
 
     @scratchpad.setter
@@ -161,7 +167,7 @@ class DS18B20:
     def convert_t(self):
         self.select()
         if self._parasitic:
-            self._ow.write_byte(COMMAND_CONVERT_T, strong_pullup=True, busy=CONVERT_TIME[self.convert_res])
+            self._ow.write_byte(COMMAND_CONVERT_T, strong_pullup=True, busy=CONVERT_TIME[self._convert_res])
         else:
             self._ow.write_byte(COMMAND_CONVERT_T)
 
@@ -173,7 +179,8 @@ class DS18B20:
         for i in range(8):
             buf[i] = self._ow.read_byte()
         if DS18B20.calc_crc(buf):
-            raise OneWireDataError
+            hexdata = ':'.join('%02X' % i for i in buf)
+            raise OneWireDataError('Bad CRC id=%s: %s' % (self._id, hexdata))
         return buf
 
 def to_fahrenheit(t):
@@ -191,7 +198,7 @@ if __name__ == '__main__':
     tmp = {}
     sensor_ids = ('C1', 'C2', 'C3', 'C4', 'C5')
     for id in sensor_ids:
-        tmp[id] = DS18B20(onewire, rom=DS18B20_SENSORS[id], convert_res=CONVERT_RES_11_BIT)
+        tmp[id] = DS18B20(onewire, rom=DS18B20_SENSORS[id], res=CONVERT_RES_11_BIT)
 
     for id in sensor_ids:
         tmp[id].convert_t()
