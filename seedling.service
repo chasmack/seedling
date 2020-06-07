@@ -1,6 +1,8 @@
 [Unit]
 Description=Seedling Control service
 After=network.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
 
 [Service]
 WorkingDirectory=/home/pi/projects/seedling
@@ -10,7 +12,8 @@ KillMode=mixed
 TimeoutStopSec=10
 StandardOutput=inherit
 StandardError=inherit
-Restart=no
+Restart=always
+RestartSec=30
 User=pi
 
 [Install]
